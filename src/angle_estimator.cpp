@@ -117,7 +117,7 @@ float IMU::Ang(float deg){
 int main(int argc, char** argv)
 {
 
-  ros::init(argc, argv,"imu_kalman");
+  ros::init(argc, argv,"kalman_angle");
   IMU imu;
   ros::NodeHandle nh;
   imu.imu_sub = nh.subscribe("ardrone/imu", 10, &IMU::imuCb, &imu);

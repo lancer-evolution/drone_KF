@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8.3)
-project(drone_KF)
+project(drone_kf)
 
 # 出力先の設定
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ../)
@@ -40,5 +40,5 @@ include_directories(
 # create library
 ADD_LIBRARY(kalmanfilter SHARED src/kalmanfilter.cpp)
 
-add_executable(imu src/imu.cpp)
-target_link_libraries(imu kalmanfilter ${catkin_LIBRARIES})
+add_executable(angle_estimator src/angle_estimator.cpp)
+target_link_libraries(angle_estimator kalmanfilter ${catkin_LIBRARIES})
