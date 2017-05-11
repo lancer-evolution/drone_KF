@@ -42,3 +42,9 @@ ADD_LIBRARY(kalmanfilter SHARED src/kalmanfilter.cpp)
 
 add_executable(angle_estimator src/angle_estimator.cpp)
 target_link_libraries(angle_estimator kalmanfilter ${catkin_LIBRARIES})
+
+add_executable(pose_estimator src/pose_estimator.cpp)
+target_link_libraries(pose_estimator kalmanfilter ${catkin_LIBRARIES})
+
+add_executable(accel_bias_estimator src/accel_bias_estimator.cpp)
+target_link_libraries(accel_bias_estimator kalmanfilter ${catkin_LIBRARIES})

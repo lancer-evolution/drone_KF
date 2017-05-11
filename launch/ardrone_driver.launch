@@ -1,0 +1,10 @@
+<launch>
+  <!-- <arg name="droneip" default="192.168.1.1" /> -->
+  <node name="ardrone_driver" pkg="ardrone_autonomy" type="ardrone_driver" output="screen">
+    <param name="navdata_demo" value="0" />
+    <param name="realtime_navdata" value="false" />
+    <param name="realtime_video" value="True" />
+	<param name="do_imu_caliberation" value="True" />
+    <param name="looprate" value="50" />
+  </node>
+</launch>
