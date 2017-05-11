@@ -23,7 +23,8 @@ public:
   ros::Publisher pub_estimation;
   ros::Publisher pub_angle;
   void imuCb(const sensor_msgs::Imu::ConstPtr& msg);
-  float Ang(float deg);
+  void getAng();
+  bool Ang_init;
   float deg_pre;
   float deg_abs;
   float dt;
@@ -48,7 +49,13 @@ public:
 
   //Vector3f rpy; //roll,pitch,yaw
   double roll, pitch, yaw;
+  double r_abs, p_abs, y_abs;//imu raw data
+  double r_pre, p_pre, y_pre;//imu pre data
+  double r_init,p_init,y_init;
   void conv_rpy(double& x, double& y, double& z);
+
+  //param
+  double accel_bias_x,accel_bias_y,accel_bias_z;
   IMU();
 	
 };
@@ -62,6 +69,9 @@ IMU::IMU():
   R(5),
   nh_("~")
 {
+  Ang_init = 1;
+  r_init = p_init = y_init = 0;
+  r_pre = p_pre = y_pre = 0;
   
   A << 1, 0, 0, dt, 0, 0, 0.5*dt*dt, 0, 0,
 	0, 1, 0, 0, dt, 0, 0, 0.5*dt*dt, 0,
@@ -84,13 +94,19 @@ IMU::IMU():
   pub_angle = nh_.advertise<geometry_msgs::Vector3>("angle_deg",50);
   pub_measurment = nh_.advertise<geometry_msgs::Vector3>("measure",50);
   pub_estimation = nh_.advertise<geometry_msgs::Vector3>("estimate",50);
+  nh_.param<double>("accel_bias_x", accel_bias_x, 0.688221);
+  nh_.param<double>("accel_bias_y", accel_bias_y, 0.742261);
+  nh_.param<double>("accel_bias_z", accel_bias_z, 9.806+0.1092);
 }
 
 void IMU::imuCb(const sensor_msgs::Imu::ConstPtr& msg)
 {
   geometry_msgs::Quaternion ori(msg->orientation);
   geometry_msgs::Vector3 li_ac(msg->linear_acceleration);
-  tf::Vector3 li_ac_tf = tf::Vector3(li_ac.x,li_ac.y,li_ac.z);
+  li_ac.x = li_ac.x - accel_bias_x;
+  li_ac.y = li_ac.y - accel_bias_y;
+  li_ac.z = li_ac.z - accel_bias_z;
+  //tf::Vector3 li_ac_tf = tf::Vector3(li_ac.x,li_ac.y,li_ac.z);
   //Quaternionf q1(ori.w,ori.x,ori.y,ori.z);
   //rpy = q1.toRotationMatrix().eulerAngles(0, 1, 2); //roll,pitch,yaw(rad)
   //deg_abs = Ang(rpy[2]*180/(M_PI));
@@ -99,15 +115,27 @@ void IMU::imuCb(const sensor_msgs::Imu::ConstPtr& msg)
   tf::Quaternion q;
   tf::quaternionMsgToTF(ori, q);
   tf::Matrix3x3 m(q);
-  m.getRPY(roll, pitch, yaw);
-  //cout << rpy[2]*180/(M_PI) << " , " << yaw*180/(M_PI) << " , "  << endl;
+  m.getRPY(r_abs, p_abs, y_abs);
 
-  if( std::isnan(roll) || std::isnan(pitch) || std::isnan(yaw)){
-	roll = 0;
-	pitch = 0;
-	yaw = 0;
+  if(Ang_init == 1){
+	// r_init = r_abs;
+	// p_init = p_abs;
+	// y_init = y_abs;
+	r_pre = r_abs;
+	p_pre = p_abs;
+	y_pre = y_abs;
+	Ang_init = 0;
+	continue;
   }
-  roll = -roll;
+  if( std::isnan(r_abs) || std::isnan(p_abs) || std::isnan(y_abs)){
+	r_abs = r_pre;
+	p_abs = p_pre;
+	y_abs = y_pre;
+  }
+  IMU::getAng();
+  
+  /*ここからーーーーーーーーー*/
+  r_abs = -r_abs;
   pitch = -pitch;
   yaw = -yaw;
   
@@ -117,7 +145,7 @@ void IMU::imuCb(const sensor_msgs::Imu::ConstPtr& msg)
   
   MatrixXd vec = MatrixXd::Zero(3,1);
   MatrixXd rotation = MatrixXd::Zero(3,3);
-  vec << li_ac.x,li_ac.y,li_ac.z-9.807;
+  vec << li_ac.x,li_ac.y,li_ac.z;
   rotation << cos(roll)*cos(pitch),cos(roll)*sin(pitch)*sin(yaw)-sin(roll)*cos(yaw),cos(roll)*sin(pitch)*cos(yaw)+sin(roll)*sin(yaw),
 	sin(yaw)*cos(pitch),sin(roll)*sin(pitch)*sin(yaw)+cos(roll)*cos(yaw),sin(roll)*sin(pitch)*cos(yaw)-cos(roll)*sin(yaw),
 	-sin(roll),cos(pitch)*sin(yaw),cos(pitch)*cos(yaw);
@@ -141,6 +169,7 @@ void IMU::imuCb(const sensor_msgs::Imu::ConstPtr& msg)
   geometry_msgs::Vector3 est_msg;
   geometry_msgs::Vector3 ang_msg;
   mst_msg.x = y(0,0);mst_msg.y = y(1,0);mst_msg.z = y(2,0);
+  //mst_msg.x = li_ac.x;mst_msg.y = li_ac.y;mst_msg.z = li_ac.z;
   est_msg.x = xhat(6,0);
   est_msg.y = xhat(7,0);
   est_msg.z = xhat(8,0);
@@ -152,14 +181,14 @@ void IMU::imuCb(const sensor_msgs::Imu::ConstPtr& msg)
   pub_angle.publish(ang_msg);
 }
 
-float IMU::Ang(float deg){
+void IMU::getAng(){
+  roll += (r_abs - r_pre);
+  pitch += (p_abs - p_pre);
+  if((y_pre >= -180) && (y_abs <= 180)){
+	yaw += ()
 
-  if(deg > 90){//0 -> 180
-	return deg - 180;
-  }else if(deg <= 90){//180 -> 0
-	return deg;
-  }else
-  return 0;
+  } 
+  
 }
 
 void IMU::conv_rpy(double& x, double& y, double& z){
