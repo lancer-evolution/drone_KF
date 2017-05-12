@@ -94,9 +94,9 @@ IMU::IMU():
   pub_angle = nh_.advertise<geometry_msgs::Vector3>("angle_deg",50);
   pub_measurment = nh_.advertise<geometry_msgs::Vector3>("measure",50);
   pub_estimation = nh_.advertise<geometry_msgs::Vector3>("estimate",50);
-  nh_.param<double>("accel_bias_x", accel_bias_x, 0.688221);
-  nh_.param<double>("accel_bias_y", accel_bias_y, 0.742261);
-  nh_.param<double>("accel_bias_z", accel_bias_z, 9.806+0.1092);
+  nh_.param<double>("accel_bias_x", accel_bias_x, 0.299766);
+  nh_.param<double>("accel_bias_y", accel_bias_y, 0.525202);
+  nh_.param<double>("accel_bias_z", accel_bias_z, 9.806+0.0806632);
 }
 
 void IMU::imuCb(const sensor_msgs::Imu::ConstPtr& msg)
@@ -116,6 +116,14 @@ void IMU::imuCb(const sensor_msgs::Imu::ConstPtr& msg)
   tf::quaternionMsgToTF(ori, q);
   tf::Matrix3x3 m(q);
   m.getRPY(r_abs, p_abs, y_abs);
+  if( std::isnan(r_abs) || std::isnan(p_abs) || std::isnan(y_abs)){
+	r_abs = r_pre;
+	p_abs = p_pre;
+	y_abs = y_pre;
+  }
+  r_abs = r_abs*180/(M_PI);
+  p_abs = p_abs*180/(M_PI);
+  y_abs = y_abs*180/(M_PI);
 
   if(Ang_init == 1){
 	// r_init = r_abs;
@@ -125,87 +133,95 @@ void IMU::imuCb(const sensor_msgs::Imu::ConstPtr& msg)
 	p_pre = p_abs;
 	y_pre = y_abs;
 	Ang_init = 0;
-	continue;
+  }else{
+	IMU::getAng();
+	
+	/*ここからーーーーーーーーー*/
+	// roll = r_abs;
+	// pitch = p_abs;
+	// yaw = y_abs;
+  
+	// 座標変換
+	//cout <<"roll:" << roll << " "<< pitch << " "<< yaw << endl;
+	//cout << "acceleration:" << li_ac.x << " " << li_ac.y << " " << endl;
+  
+	MatrixXd vec = MatrixXd::Zero(3,1);
+	MatrixXd rotation = MatrixXd::Zero(3,3);
+	vec << li_ac.x,li_ac.y,li_ac.z;
+	rotation << cos(roll)*cos(pitch),cos(roll)*sin(pitch)*sin(yaw)-sin(roll)*cos(yaw),cos(roll)*sin(pitch)*cos(yaw)+sin(roll)*sin(yaw),
+	  sin(yaw)*cos(pitch),sin(roll)*sin(pitch)*sin(yaw)+cos(roll)*cos(yaw),sin(roll)*sin(pitch)*cos(yaw)-cos(roll)*sin(yaw),
+	  -sin(roll),cos(pitch)*sin(yaw),cos(pitch)*cos(yaw);
+
+	vec = rotation*vec; // 世界座標へ
+	// geometry_msgs::Vector3 world_ac;
+	// world_ac.x = vec(0,0);
+	// world_ac.y = vec(1,0);
+	// world_ac.z = vec(2,0);
+	//cout << "trans:" << world_ac << endl;
+  
+	/*kalman filter*/
+	y << vec(0,0),vec(1,0),vec(2,0);
+	//kf.kf(A,b,bu,c,Q,R,0,y,xhat,P);
+	kf.kf(A,b,bu,c.transpose(),Q,R,u,y,xhat,P);
+  
+	cout << "ang:" << roll << "," << pitch << "," << yaw << endl;
+		 // << "x  :" << xhat(0,0) <<","<< xhat(1,0) <<","<< xhat(2,0) << endl
+		 // << "x' :" << xhat(3,0) <<","<< xhat(4,0) <<","<< xhat(5,0) << endl
+		 // << "x'':" << xhat(6,0) <<","<< xhat(7,0) <<","<< xhat(8,0) << endl
+		 // << "y  :" << y(0,0) << "," << y(1,0) << "," << y(2,0) << endl;
+
+	geometry_msgs::Vector3 mst_msg;
+	geometry_msgs::Vector3 est_msg;
+	geometry_msgs::Vector3 ang_msg;
+	mst_msg.x = y(0,0);mst_msg.y = y(1,0);mst_msg.z = y(2,0);
+	//mst_msg.x = li_ac.x;mst_msg.y = li_ac.y;mst_msg.z = li_ac.z;
+	est_msg.x = xhat(6,0);
+	est_msg.y = xhat(7,0);
+	est_msg.z = xhat(8,0);
+	ang_msg.x = roll;
+	ang_msg.y = pitch;
+	ang_msg.z = yaw;
+	pub_measurment.publish(mst_msg);
+	pub_estimation.publish(est_msg);
+	pub_angle.publish(ang_msg);
   }
-  if( std::isnan(r_abs) || std::isnan(p_abs) || std::isnan(y_abs)){
-	r_abs = r_pre;
-	p_abs = p_pre;
-	y_abs = y_pre;
+}
+
+  void IMU::getAng(){
+	roll += (r_abs - r_pre);
+	pitch += (p_abs - p_pre);
+	if(((y_pre >= -180) && (y_pre < -90)) && ((y_abs <= 180) && (y_abs > 90))){// 反対
+	  yaw += (- (180 + y_pre) + (y_abs - 180));
+	  //cout << "aaaa" << y_pre << " " << y_abs << endl;
+	}else if (((y_pre <= 180) && (y_pre > 90)) && ((y_abs >= -180) && (y_abs < -90))){
+	  yaw += ((180 - y_pre) + (180 + y_abs));
+	  //cout << "bbbb"  << y_pre << " " << y_abs << endl;
+	}else{
+	  yaw += (y_abs - y_pre);
+	  //cout << "c" << endl;
+	}
+	
+	// 前回値の保持
+	r_pre = r_abs;
+	p_pre = p_abs;
+	y_pre = y_abs;
   }
-  IMU::getAng();
-  
-  /*ここからーーーーーーーーー*/
-  r_abs = -r_abs;
-  pitch = -pitch;
-  yaw = -yaw;
-  
-  // 座標変換
-  //cout <<"roll:" << roll << " "<< pitch << " "<< yaw << endl;
-  //cout << "acceleration:" << li_ac.x << " " << li_ac.y << " " << endl;
-  
-  MatrixXd vec = MatrixXd::Zero(3,1);
-  MatrixXd rotation = MatrixXd::Zero(3,3);
-  vec << li_ac.x,li_ac.y,li_ac.z;
-  rotation << cos(roll)*cos(pitch),cos(roll)*sin(pitch)*sin(yaw)-sin(roll)*cos(yaw),cos(roll)*sin(pitch)*cos(yaw)+sin(roll)*sin(yaw),
-	sin(yaw)*cos(pitch),sin(roll)*sin(pitch)*sin(yaw)+cos(roll)*cos(yaw),sin(roll)*sin(pitch)*cos(yaw)-cos(roll)*sin(yaw),
-	-sin(roll),cos(pitch)*sin(yaw),cos(pitch)*cos(yaw);
 
-  vec = rotation*vec; // 世界座標へ
-  // geometry_msgs::Vector3 world_ac;
-  // world_ac.x = vec(0,0);
-  // world_ac.y = vec(1,0);
-  // world_ac.z = vec(2,0);
-  //cout << "trans:" << world_ac << endl;
-  
-  /*kalman filter*/
-  y << vec(0,0),vec(1,0),vec(2,0);
-  //kf.kf(A,b,bu,c,Q,R,0,y,xhat,P);
-  kf.kf(A,b,bu,c.transpose(),Q,R,u,y,xhat,P);
-  
-  cout << "y:" << y << endl
-	   << "xhat:" << xhat(6,0) <<","<< xhat(7,0) <<","<< xhat(8,0) << endl;
-
-  geometry_msgs::Vector3 mst_msg;
-  geometry_msgs::Vector3 est_msg;
-  geometry_msgs::Vector3 ang_msg;
-  mst_msg.x = y(0,0);mst_msg.y = y(1,0);mst_msg.z = y(2,0);
-  //mst_msg.x = li_ac.x;mst_msg.y = li_ac.y;mst_msg.z = li_ac.z;
-  est_msg.x = xhat(6,0);
-  est_msg.y = xhat(7,0);
-  est_msg.z = xhat(8,0);
-  ang_msg.x = roll*180/(M_PI);
-  ang_msg.y = pitch*180/(M_PI);
-  ang_msg.z = yaw*180/(M_PI);
-  pub_measurment.publish(mst_msg);
-  pub_estimation.publish(est_msg);
-  pub_angle.publish(ang_msg);
-}
-
-void IMU::getAng(){
-  roll += (r_abs - r_pre);
-  pitch += (p_abs - p_pre);
-  if((y_pre >= -180) && (y_abs <= 180)){
-	yaw += ()
-
-  } 
-  
-}
-
-void IMU::conv_rpy(double& x, double& y, double& z){
-  MatrixXd conv = MatrixXd::Zero(3,3);
+  void IMU::conv_rpy(double& x, double& y, double& z){
+	MatrixXd conv = MatrixXd::Zero(3,3);
 
 
-}
+  }
 
-int main(int argc, char** argv)
-{
+  int main(int argc, char** argv)
+  {
 
-  ros::init(argc, argv,"kalman_pose");
-  IMU imu;
-  ros::NodeHandle nh;
-  imu.imu_sub = nh.subscribe("ardrone/imu", 10, &IMU::imuCb, &imu);
-  ROS_INFO_STREAM("kalmanfilter started!");
-  ros::spin();
+	ros::init(argc, argv,"kalman_pose");
+	IMU imu;
+	ros::NodeHandle nh;
+	imu.imu_sub = nh.subscribe("ardrone/imu", 10, &IMU::imuCb, &imu);
+	ROS_INFO_STREAM("kalmanfilter started!");
+	ros::spin();
 
-  return 0;
-}
+	return 0;
+  }
