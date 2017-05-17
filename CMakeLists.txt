@@ -48,3 +48,6 @@ target_link_libraries(pose_estimator kalmanfilter ${catkin_LIBRARIES})
 
 add_executable(accel_bias_estimator src/accel_bias_estimator.cpp)
 target_link_libraries(accel_bias_estimator kalmanfilter ${catkin_LIBRARIES})
+
+add_executable(test_acc_estimator src/test_acc_estimator.cpp)
+target_link_libraries(test_acc_estimator kalmanfilter ${catkin_LIBRARIES})
